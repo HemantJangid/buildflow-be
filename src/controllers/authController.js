@@ -416,7 +416,9 @@ export const getAllUsers = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
     const { page, limit, skip } = getPagination(req.query, 10);
-    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    let search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    // Only apply search when more than 3 chars
+    if (search.length <= 3) search = '';
     const searchBy = req.query.searchBy === 'email' ? 'email' : 'name';
     const roleId = req.query.roleId || null;
     const category = req.query.category && USER_CATEGORIES.includes(req.query.category) ? req.query.category : null;

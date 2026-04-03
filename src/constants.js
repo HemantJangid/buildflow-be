@@ -47,6 +47,12 @@ export const PERMISSIONS = {
   EXPENSES_DELETE: "expenses:delete",
   EXPENSES_APPROVE: "expenses:approve",
 
+  // Revenue
+  REVENUE_CREATE: "revenue:create",
+  REVENUE_READ: "revenue:read",
+  REVENUE_UPDATE: "revenue:update",
+  REVENUE_DELETE: "revenue:delete",
+
   // Roles
   ROLES_CREATE: "roles:create",
   ROLES_READ: "roles:read",
@@ -99,3 +105,13 @@ export const DEFAULT_ORG_SETTINGS = {
 };
 
 export const CURRENCIES = ["USD", "EUR", "GBP", "INR", "AED", "SAR", "QAR"];
+
+export const REVENUE_CATEGORIES = [
+  "Contract Payment",
+  "Milestone Payment",
+  "Advance Payment",
+  "Retention Release",
+  "Other",
+];
+
+export const REVENUE_STATUS = ["Draft", "Invoiced", "Received", "Void"];

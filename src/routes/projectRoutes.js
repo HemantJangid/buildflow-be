@@ -10,6 +10,7 @@ import {
   getProjectAvailableUsers,
   getProjectMembers,
   addProjectMember,
+  addProjectMembersBulk,
   removeProjectMember,
 } from '../controllers/projectController.js';
 import { PERMISSIONS } from '../constants.js';
@@ -38,6 +39,11 @@ const addMemberValidation = [
   body('minWorkHours').optional().isFloat({ min: 0, max: 24 }),
 ];
 
+const addMembersBulkValidation = [
+  body('userIds').isArray().withMessage('userIds must be an array'),
+  body('userIds.*').isMongoId().withMessage('Each userId must be a valid ID'),
+];
+
 // Routes
 router.post('/', protect, hasPermission(PERMISSIONS.PROJECTS_CREATE), projectValidation, validate, createProject);
 router.get('/', protect, hasPermission(PERMISSIONS.PROJECTS_READ), getAllProjects);
@@ -49,6 +55,7 @@ router.delete('/:id', protect, hasPermission(PERMISSIONS.PROJECTS_DELETE), delet
 
 // Project members (workers assigned to project)
 router.get('/:id/members', protect, hasPermission(PERMISSIONS.PROJECTS_READ), getProjectMembers);
+router.post('/:id/members/bulk', protect, hasAnyPermission(PERMISSIONS.PROJECTS_UPDATE, PERMISSIONS.PROJECT_MEMBERS_UPDATE), addMembersBulkValidation, validate, addProjectMembersBulk);
 router.post('/:id/members', protect, hasAnyPermission(PERMISSIONS.PROJECTS_UPDATE, PERMISSIONS.PROJECT_MEMBERS_UPDATE), addMemberValidation, validate, addProjectMember);
 router.delete('/:id/members/:userId', protect, hasAnyPermission(PERMISSIONS.PROJECTS_UPDATE, PERMISSIONS.PROJECT_MEMBERS_UPDATE), removeProjectMember);
 

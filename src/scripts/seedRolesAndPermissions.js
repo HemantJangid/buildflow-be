@@ -182,6 +182,30 @@ const systemPermissions = [
     category: "system",
     isSystem: true,
   },
+  {
+    name: PERMISSIONS.REVENUE_CREATE,
+    description: "Add revenue records",
+    category: "revenue",
+    isSystem: true,
+  },
+  {
+    name: PERMISSIONS.REVENUE_READ,
+    description: "View revenue records",
+    category: "revenue",
+    isSystem: true,
+  },
+  {
+    name: PERMISSIONS.REVENUE_UPDATE,
+    description: "Edit revenue records",
+    category: "revenue",
+    isSystem: true,
+  },
+  {
+    name: PERMISSIONS.REVENUE_DELETE,
+    description: "Delete revenue records",
+    category: "revenue",
+    isSystem: true,
+  },
 ];
 
 /**

@@ -470,6 +470,92 @@ export const addProjectMember = async (req, res) => {
 };
 
 /**
+ * @desc    Add multiple workers to a project (bulk)
+ * @route   POST /api/projects/:id/members/bulk
+ * @access  Private (project update)
+ */
+export const addProjectMembersBulk = async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const organizationId = req.user.organizationId;
+    const userIds = Array.isArray(req.body.userIds) ? req.body.userIds : [];
+
+    const project = await Project.findOne({ _id: projectId, organizationId });
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+
+    if (req.user.role?.name !== ROLES.ADMIN) {
+      const myMembership = await ProjectMember.findOne({
+        userId: req.user.id,
+        organizationId,
+        projectId,
+        isActive: true,
+      });
+      if (!myMembership) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only add members to projects you belong to',
+        });
+      }
+    }
+
+    let added = 0;
+    const errors = [];
+
+    for (const userId of userIds) {
+      const isUserInOrg = await OrganizationMember.findOne({ userId, organizationId });
+      if (!isUserInOrg) {
+        errors.push({ userId, reason: 'User is not in this organization' });
+        continue;
+      }
+
+      const user = await User.findById(userId);
+      if (!user || !user.isActive) {
+        errors.push({ userId, reason: 'User not found or inactive' });
+        continue;
+      }
+
+      const existing = await ProjectMember.findOne({
+        projectId,
+        organizationId,
+        userId,
+        isActive: true,
+      });
+      if (existing) {
+        errors.push({ userId, reason: 'Already a member of this project' });
+        continue;
+      }
+
+      await ProjectMember.create({
+        organizationId,
+        projectId,
+        userId,
+        minWorkHours: null,
+      });
+      added += 1;
+    }
+
+    const skipped = userIds.length - added;
+
+    res.status(200).json({
+      success: true,
+      message: added > 0 ? 'Members added successfully' : 'No members added',
+      data: { added, skipped, errors: errors.length > 0 ? errors : undefined },
+    });
+  } catch (error) {
+    logger.error('Add project members bulk error', { error: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+};
+
+/**
  * @desc    Remove a worker from a project (soft: set isActive false)
  * @route   DELETE /api/projects/:id/members/:userId
  * @access  Private (project update)
@@ -543,5 +629,6 @@ export default {
   getProjectAvailableUsers,
   getProjectMembers,
   addProjectMember,
+  addProjectMembersBulk,
   removeProjectMember,
 };

@@ -5,6 +5,7 @@ import expenseRoutes from "./expenseRoutes.js";
 import organizationRoutes from "./organizationRoutes.js";
 import projectRoutes from "./projectRoutes.js";
 import reportRoutes from "./reportRoutes.js";
+import revenueRoutes from "./revenueRoutes.js";
 import roleRoutes from "./roleRoutes.js";
 import supervisorRoutes from "./supervisorRoutes.js";
 
@@ -19,5 +20,6 @@ router.use("/reports", reportRoutes);
 router.use("/roles", roleRoutes);
 router.use("/supervisor", supervisorRoutes);
 router.use("/expenses", expenseRoutes);
+router.use("/revenue", revenueRoutes);
 
 export default router;

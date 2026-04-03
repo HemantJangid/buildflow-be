@@ -36,7 +36,7 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    const user = await User.findById(userId).select('-password');
+    const user = await User.findById(userId).select('-password').lean();
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -54,10 +54,12 @@ export const protect = async (req, res, next) => {
     const membership = await OrganizationMember.findOne({
       userId,
       organizationId,
-    }).populate({
-      path: 'roleId',
-      populate: { path: 'permissions' },
-    });
+    })
+      .populate({
+        path: 'roleId',
+        populate: { path: 'permissions' },
+      })
+      .lean();
 
     if (!membership) {
       return res.status(401).json({
@@ -70,7 +72,7 @@ export const protect = async (req, res, next) => {
     const permissions = role?.permissions?.map((p) => p.name) || [];
 
     req.user = {
-      ...user.toObject(),
+      ...user,
       id: user._id,
       organizationId,
       role,

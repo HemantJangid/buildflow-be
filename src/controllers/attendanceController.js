@@ -18,16 +18,21 @@ import logger from "../utils/logger.js";
  */
 const getMinWorkHours = async (userId, projectId) => {
   const SYSTEM_DEFAULT = 8;
+  const projectIdResolved =
+    projectId && typeof projectId === "object" && projectId._id
+      ? projectId._id
+      : projectId;
 
   try {
-    const user = await User.findById(userId);
-    const project = await Project.findById(projectId);
-
-    const projectMember = await ProjectMember.findOne({
-      userId,
-      projectId,
-      isActive: true,
-    });
+    const [user, project, projectMember] = await Promise.all([
+      User.findById(userId),
+      Project.findById(projectIdResolved),
+      ProjectMember.findOne({
+        userId,
+        projectId: projectIdResolved,
+        isActive: true,
+      }),
+    ]);
 
     // Priority 1: ProjectMember override
     if (
@@ -256,9 +261,19 @@ export const clockIn = async (req, res) => {
         });
       }
 
+      const projectIds = projectsInRange.map(({ project }) => project._id);
+      const memberships = await ProjectMember.find({
+        userId,
+        organizationId,
+        projectId: { $in: projectIds },
+        isActive: true,
+      }).select("projectId");
+      const allowedProjectIds = new Set(
+        memberships.map((m) => m.projectId?.toString()).filter(Boolean),
+      );
+
       for (const { project, distance } of projectsInRange) {
-        const canWork = await isUserProjectMember(userId, project._id, organizationId);
-        if (canWork) {
+        if (allowedProjectIds.has(project._id.toString())) {
           selectedProject = project;
           geofenceResult = { isWithinGeofence: true, distance };
           break;
@@ -502,7 +517,9 @@ export const getAllAttendance = async (req, res) => {
     } = req.query;
 
     const organizationId = req.user.organizationId;
-    const { page, limit, skip } = getPagination(req.query, 10);
+    let { page, limit, skip } = getPagination(req.query, 10);
+    limit = Math.min(limit, 200);
+    skip = (page - 1) * limit;
 
     const query = { organizationId };
 

@@ -1,14 +1,10 @@
 import { PERMISSIONS, ROLES } from "../constants.js";
-import Expense from "../models/Expense.js";
+import Revenue from "../models/Revenue.js";
 import Project from "../models/Project.js";
 import ProjectMember from "../models/ProjectMember.js";
 import logger from "../utils/logger.js";
 import { getPagination, paginatedResponse } from "../utils/pagination.js";
 
-/**
- * Get allowed project IDs for current user (Admin = all org projects, else = assigned only).
- * Cached per request so multiple handlers do not re-query.
- */
 async function getAllowedProjectIds(req) {
   if (req._allowedProjectIds !== undefined) {
     return req._allowedProjectIds;
@@ -32,16 +28,15 @@ async function getAllowedProjectIds(req) {
 }
 
 /**
- * @desc    Get all expenses (paginated)
- * @route   GET /api/expenses?page=1&limit=10&projectId=&startDate=&endDate=&category=&status=&submittedBy=
- * @access  Private (expenses:readOwn or expenses:readAll)
+ * @desc    Get all revenue (paginated)
+ * @route   GET /api/revenue?page=1&limit=10&projectId=&startDate=&endDate=&category=&status=
+ * @access  Private (revenue:read)
  */
-export const getAllExpenses = async (req, res) => {
+export const getAllRevenue = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
     const { page, limit, skip } = getPagination(req.query, 10);
-    const { projectId, startDate, endDate, category, status, submittedBy } =
-      req.query;
+    const { projectId, startDate, endDate, category, status } = req.query;
 
     const projectIds = await getAllowedProjectIds(req);
     if (projectIds.length === 0) {
@@ -50,11 +45,9 @@ export const getAllExpenses = async (req, res) => {
 
     const query = { organizationId, projectId: { $in: projectIds } };
 
-    const hasReadAll = req.user.permissions?.includes(
-      PERMISSIONS.EXPENSES_READ_ALL,
-    );
+    const hasReadAll = req.user.permissions?.includes(PERMISSIONS.REVENUE_READ);
     if (!hasReadAll) {
-      query.submittedBy = req.user.id;
+      query.recordedBy = req.user.id;
     }
 
     if (projectId) query.projectId = projectId;
@@ -65,74 +58,70 @@ export const getAllExpenses = async (req, res) => {
     }
     if (category) query.category = category;
     if (status) query.status = status;
-    if (submittedBy) query.submittedBy = submittedBy;
 
-    const [expenses, total] = await Promise.all([
-      Expense.find(query)
+    const [revenues, total] = await Promise.all([
+      Revenue.find(query)
         .populate("projectId", "name")
-        .populate("submittedBy", "name email")
+        .populate("recordedBy", "name email")
         .sort({ date: -1, createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      Expense.countDocuments(query),
+      Revenue.countDocuments(query),
     ]);
 
-    return paginatedResponse(res, { data: expenses, total, page, limit });
+    return paginatedResponse(res, { data: revenues, total, page, limit });
   } catch (error) {
-    logger.error("Get expenses error", { error: error.message });
+    logger.error("Get revenue error", { error: error.message });
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 /**
- * @desc    Get single expense
- * @route   GET /api/expenses/:id
+ * @desc    Get single revenue record
+ * @route   GET /api/revenue/:id
  * @access  Private
  */
-export const getExpense = async (req, res) => {
+export const getRevenue = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
     const projectIds = await getAllowedProjectIds(req);
 
-    const expense = await Expense.findOne({
+    const revenue = await Revenue.findOne({
       _id: req.params.id,
       organizationId,
       projectId: { $in: projectIds },
     })
       .populate("projectId", "name")
-      .populate("submittedBy", "name email")
-      .populate("approvedBy", "name")
+      .populate("recordedBy", "name email")
       .lean();
 
-    if (!expense) {
+    if (!revenue) {
       return res
         .status(404)
-        .json({ success: false, message: "Expense not found" });
+        .json({ success: false, message: "Revenue not found" });
     }
 
-    const hasReadAll = req.user.permissions?.includes(
-      PERMISSIONS.EXPENSES_READ_ALL,
-    );
-    if (!hasReadAll && expense.submittedBy?._id?.toString() !== req.user.id) {
+    const hasReadAll = req.user.permissions?.includes(PERMISSIONS.REVENUE_READ);
+    if (!hasReadAll && revenue.recordedBy?._id?.toString() !== req.user.id) {
       return res
         .status(404)
-        .json({ success: false, message: "Expense not found" });
+        .json({ success: false, message: "Revenue not found" });
     }
 
-    return res.status(200).json({ success: true, data: expense });
+    return res.status(200).json({ success: true, data: revenue });
   } catch (error) {
-    logger.error("Get expense error", { error: error.message });
+    logger.error("Get revenue error", { error: error.message });
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 /**
- * @desc    Create expense
- * @route   POST /api/expenses
- * @access  Private (expenses:create)
+ * @desc    Create revenue record
+ * @route   POST /api/revenue
+ * @access  Private (revenue:create)
  */
-export const createExpense = async (req, res) => {
+export const createRevenue = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
     const projectIds = await getAllowedProjectIds(req);
@@ -144,8 +133,8 @@ export const createExpense = async (req, res) => {
       description,
       date,
       status,
-      vendor,
-      receiptNumber,
+      clientName,
+      invoiceNumber,
     } = req.body;
 
     if (!projectIds.includes(projectId)) {
@@ -154,65 +143,61 @@ export const createExpense = async (req, res) => {
         .json({ success: false, message: "Project not found" });
     }
 
-    const expense = await Expense.create({
+    const revenue = await Revenue.create({
       organizationId,
       projectId,
-      submittedBy: req.user.id,
+      recordedBy: req.user.id,
       amount: Number(amount),
       currency: currency || "USD",
       category,
       description: description || "",
       date: date ? new Date(date) : new Date(),
       status: status || "Draft",
-      vendor: vendor || "",
-      receiptNumber: receiptNumber || "",
+      clientName: clientName || "",
+      invoiceNumber: invoiceNumber || "",
     });
 
-    await expense.populate("projectId", "name");
-    await expense.populate("submittedBy", "name email");
+    await revenue.populate("projectId", "name");
+    await revenue.populate("recordedBy", "name email");
 
     res.status(201).json({
       success: true,
-      message: "Expense created successfully",
-      data: expense,
+      message: "Revenue created successfully",
+      data: revenue,
     });
   } catch (error) {
-    logger.error("Create expense error", { error: error.message });
+    logger.error("Create revenue error", { error: error.message });
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 /**
- * @desc    Update expense
- * @route   PUT /api/expenses/:id
- * @access  Private (expenses:update)
+ * @desc    Update revenue record
+ * @route   PUT /api/revenue/:id
+ * @access  Private (revenue:update)
  */
-export const updateExpense = async (req, res) => {
+export const updateRevenue = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
     const projectIds = await getAllowedProjectIds(req);
-    const expense = await Expense.findOne({
+    const revenue = await Revenue.findOne({
       _id: req.params.id,
       organizationId,
       projectId: { $in: projectIds },
     });
 
-    if (!expense) {
+    if (!revenue) {
       return res
         .status(404)
-        .json({ success: false, message: "Expense not found" });
+        .json({ success: false, message: "Revenue not found" });
     }
 
-    const hasReadAll = req.user.permissions?.includes(
-      PERMISSIONS.EXPENSES_READ_ALL,
-    );
-    if (!hasReadAll && expense.submittedBy.toString() !== req.user.id) {
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "You can only edit your own expenses",
-        });
+    const hasReadAll = req.user.permissions?.includes(PERMISSIONS.REVENUE_READ);
+    if (!hasReadAll && revenue.recordedBy.toString() !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only edit your own revenue records",
+      });
     }
 
     const {
@@ -222,75 +207,73 @@ export const updateExpense = async (req, res) => {
       description,
       date,
       status,
-      vendor,
-      receiptNumber,
+      clientName,
+      invoiceNumber,
     } = req.body;
-    if (amount != null) expense.amount = Number(amount);
-    if (currency != null) expense.currency = currency;
-    if (category != null) expense.category = category;
-    if (description != null) expense.description = description;
-    if (date != null) expense.date = new Date(date);
-    if (status != null) expense.status = status;
-    if (vendor != null) expense.vendor = vendor;
-    if (receiptNumber != null) expense.receiptNumber = receiptNumber;
+    if (amount != null) revenue.amount = Number(amount);
+    if (currency != null) revenue.currency = currency;
+    if (category != null) revenue.category = category;
+    if (description != null) revenue.description = description;
+    if (date != null) revenue.date = new Date(date);
+    if (status != null) revenue.status = status;
+    if (clientName != null) revenue.clientName = clientName;
+    if (invoiceNumber != null) revenue.invoiceNumber = invoiceNumber;
 
-    await expense.save();
-    await expense.populate("projectId", "name");
-    await expense.populate("submittedBy", "name email");
+    await revenue.save();
+    await revenue.populate("projectId", "name");
+    await revenue.populate("recordedBy", "name email");
 
-    return res.status(200).json({ success: true, data: expense });
+    return res.status(200).json({ success: true, data: revenue });
   } catch (error) {
-    logger.error("Update expense error", { error: error.message });
+    logger.error("Update revenue error", { error: error.message });
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 /**
- * @desc    Delete expense
- * @route   DELETE /api/expenses/:id
- * @access  Private (expenses:delete)
+ * @desc    Delete revenue record
+ * @route   DELETE /api/revenue/:id
+ * @access  Private (revenue:delete)
  */
-export const deleteExpense = async (req, res) => {
+export const deleteRevenue = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
     const projectIds = await getAllowedProjectIds(req);
 
-    const expense = await Expense.findOne({
+    const revenue = await Revenue.findOne({
       _id: req.params.id,
       organizationId,
       projectId: { $in: projectIds },
     });
 
-    if (!expense) {
+    if (!revenue) {
       return res
         .status(404)
-        .json({ success: false, message: "Expense not found" });
+        .json({ success: false, message: "Revenue not found" });
     }
 
-    await Expense.findByIdAndDelete(expense._id);
-    return res.status(200).json({ success: true, message: "Expense deleted" });
+    await Revenue.findByIdAndDelete(revenue._id);
+    return res.status(200).json({ success: true, message: "Revenue deleted" });
   } catch (error) {
-    logger.error("Delete expense error", { error: error.message });
+    logger.error("Delete revenue error", { error: error.message });
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 /**
- * @desc    Get expense summary (non-paginated) – aggregation-based
- * @route   GET /api/expenses/summary?groupBy=project|category|period|user&startDate=&endDate=&projectId=
- * @access  Private (expenses:readAll)
+ * @desc    Get revenue summary (aggregation-based)
+ * @route   GET /api/revenue/summary?groupBy=project|category|period&startDate=&endDate=&projectId=
+ * @access  Private (revenue:read)
  */
-export const getExpenseSummary = async (req, res) => {
+export const getRevenueSummary = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
     const projectIds = await getAllowedProjectIds(req);
     if (projectIds.length === 0) {
-      return res
-        .status(200)
-        .json({
-          success: true,
-          data: { groups: [], totalAmount: 0, count: 0 },
-        });
+      return res.status(200).json({
+        success: true,
+        data: { groups: [], totalAmount: 0, count: 0 },
+      });
     }
 
     const { groupBy, startDate, endDate, projectId } = req.query;
@@ -307,7 +290,6 @@ export const getExpenseSummary = async (req, res) => {
     let groupId;
     if (key === "project") groupId = "$projectId";
     else if (key === "category") groupId = { $ifNull: ["$category", "Other"] };
-    else if (key === "user") groupId = "$submittedBy";
     else if (key === "period")
       groupId = { $dateToString: { format: "%Y-%m", date: "$date" } };
     else
@@ -317,7 +299,7 @@ export const getExpenseSummary = async (req, res) => {
       });
 
     const [totalsResult, groupsResult] = await Promise.all([
-      Expense.aggregate([
+      Revenue.aggregate([
         { $match: matchStage },
         {
           $group: {
@@ -327,7 +309,7 @@ export const getExpenseSummary = async (req, res) => {
           },
         },
       ]),
-      Expense.aggregate([
+      Revenue.aggregate([
         { $match: matchStage },
         {
           $group: {
@@ -360,35 +342,24 @@ export const getExpenseSummary = async (req, res) => {
         projects.map((p) => [p._id.toString(), p.name || p._id.toString()]),
       );
       groups = groups.map((g) => ({ ...g, label: nameMap[g.id] || g.id }));
-    } else if (key === "user" && groups.length > 0) {
-      const User = (await import("../models/User.js")).default;
-      const ids = groups.map((g) => g.id);
-      const users = await User.find({ _id: { $in: ids } })
-        .select("name")
-        .lean();
-      const nameMap = Object.fromEntries(
-        users.map((u) => [u._id.toString(), u.name || u._id.toString()]),
-      );
-      groups = groups.map((g) => ({ ...g, label: nameMap[g.id] || g.id }));
     }
-    // category and period: id already used as label
 
     return res.status(200).json({
       success: true,
       data: { groups, totalAmount, count },
     });
   } catch (error) {
-    logger.error("Expense summary error", { error: error.message });
+    logger.error("Revenue summary error", { error: error.message });
     res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 /**
- * @desc    Export expenses as CSV (same filters as list)
- * @route   GET /api/expenses/export?format=csv&projectId=&startDate=&endDate=&...
- * @access  Private (expenses:readAll or reports:export)
+ * @desc    Export revenue as CSV
+ * @route   GET /api/revenue/export
+ * @access  Private (revenue:read)
  */
-export const exportExpenses = async (req, res) => {
+export const exportRevenue = async (req, res) => {
   try {
     const organizationId = req.user.organizationId;
     const projectIds = await getAllowedProjectIds(req);
@@ -397,17 +368,8 @@ export const exportExpenses = async (req, res) => {
       return res
         .status(200)
         .send(
-          "date,project,category,amount,currency,status,submittedBy,description\n",
+          "date,project,category,amount,currency,status,clientName,invoiceNumber,recordedBy,description\n",
         );
-    }
-
-    const hasReadAll = req.user.permissions?.includes(
-      PERMISSIONS.EXPENSES_READ_ALL,
-    );
-    if (!hasReadAll) {
-      return res
-        .status(403)
-        .json({ success: false, message: "Permission denied" });
     }
 
     const { projectId, startDate, endDate, category, status } = req.query;
@@ -421,38 +383,40 @@ export const exportExpenses = async (req, res) => {
     if (category) query.category = category;
     if (status) query.status = status;
 
-    const expenses = await Expense.find(query)
+    const revenues = await Revenue.find(query)
       .populate("projectId", "name")
-      .populate("submittedBy", "name email")
+      .populate("recordedBy", "name email")
       .sort({ date: -1 })
       .limit(5000)
       .lean();
 
-    const rows = expenses.map((e) => {
-      const date = e.date ? new Date(e.date).toISOString().slice(0, 10) : "";
-      const project = (e.projectId?.name || e.projectId || "")
+    const rows = revenues.map((r) => {
+      const date = r.date ? new Date(r.date).toISOString().slice(0, 10) : "";
+      const project = (r.projectId?.name || r.projectId || "")
         .toString()
         .replace(/"/g, '""');
-      const submittedBy = (
-        e.submittedBy?.name ||
-        e.submittedBy?.email ||
-        e.submittedBy ||
+      const recordedBy = (
+        r.recordedBy?.name ||
+        r.recordedBy?.email ||
+        r.recordedBy ||
         ""
       )
         .toString()
         .replace(/"/g, '""');
-      const desc = (e.description || "").toString().replace(/"/g, '""');
-      return `"${date}","${project}","${e.category || ""}",${e.amount || 0},"${e.currency || "USD"}","${e.status || ""}","${submittedBy}","${desc}"`;
+      const desc = (r.description || "").toString().replace(/"/g, '""');
+      const client = (r.clientName || "").toString().replace(/"/g, '""');
+      const invoice = (r.invoiceNumber || "").toString().replace(/"/g, '""');
+      return `"${date}","${project}","${r.category || ""}",${r.amount || 0},"${r.currency || "USD"}","${r.status || ""}","${client}","${invoice}","${recordedBy}","${desc}"`;
     });
     const csv =
-      "date,project,category,amount,currency,status,submittedBy,description\n" +
+      "date,project,category,amount,currency,status,clientName,invoiceNumber,recordedBy,description\n" +
       rows.join("\n");
 
     res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", "attachment; filename=expenses.csv");
+    res.setHeader("Content-Disposition", "attachment; filename=revenue.csv");
     return res.status(200).send(csv);
   } catch (error) {
-    logger.error("Export expenses error", { error: error.message });
+    logger.error("Export revenue error", { error: error.message });
     res.status(500).json({ success: false, message: "Server error" });
   }
 };

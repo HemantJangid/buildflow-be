@@ -99,6 +99,7 @@ attendanceSchema.index({ userId: 1, createdAt: -1 });
 attendanceSchema.index({ projectId: 1, createdAt: -1 });
 attendanceSchema.index({ userId: 1, status: 1 });
 attendanceSchema.index({ attendanceStatus: 1, createdAt: -1 });
+attendanceSchema.index({ organizationId: 1, status: 1, clockIn: -1 });
 
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 

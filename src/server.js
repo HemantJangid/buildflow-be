@@ -16,14 +16,21 @@ connectDB();
 const app = express();
 
 // Middleware
-app.use(cors());
+const isProduction = process.env.NODE_ENV === 'production';
+app.use(
+  cors(
+    isProduction
+      ? { origin: process.env.CORS_ORIGIN || process.env.FRONTEND_URL }
+      : undefined
+  )
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request/Response Logger - logs all requests except health checks
+// Request/Response Logger - logs all requests except health checks (no body in production)
 app.use(
   requestLogger({
-    logBody: true,
+    logBody: !isProduction,
     logHeaders: false,
     logQuery: true,
     skipPaths: ['/health'],
